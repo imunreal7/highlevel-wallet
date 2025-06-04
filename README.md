@@ -4,6 +4,20 @@ This repository implements a **Wallet System** using the **MERN** stack (MongoDB
 
 ---
 
+## DEMO
+
+[![Demo Video](/frontend/public/Wallet-demo.png)](https://youtu.be/RQ5bPIV9Yh0)
+
+---
+
+## 🌐 Deployed on
+
+Frontend (Vercel): <https://highlevel-wallet-ruddy.vercel.app/>
+
+Backend (Render): <https://highlevel-wallet-80vq.onrender.com>
+
+---
+
 ## Table of Contents
 
 1. [Project Setup](#project-setup)
