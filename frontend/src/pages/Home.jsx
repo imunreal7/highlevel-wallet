@@ -3,31 +3,32 @@ import { useNavigate } from "react-router-dom";
 import { setupWallet, getWallet, transact } from "../utils/api";
 
 function Home() {
+    const navigate = useNavigate();
+
     const [walletId, setWalletId] = useState(() => {
-        // Read from localStorage
         return localStorage.getItem("walletId") || "";
     });
     const [walletName, setWalletName] = useState("");
     const [walletBalance, setWalletBalance] = useState(null);
+
     const [loading, setLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState("");
 
-    // Form state for initializing
+    const [fieldErrors, setFieldErrors] = useState({});
+
     const [initName, setInitName] = useState("");
     const [initBalance, setInitBalance] = useState("");
 
-    // Form state for transactions
     const [txnAmount, setTxnAmount] = useState("");
     const [txnType, setTxnType] = useState("CREDIT"); // 'CREDIT' or 'DEBIT'
     const [txnDesc, setTxnDesc] = useState("");
 
-    const navigate = useNavigate();
-
-    // If walletId exists, fetch wallet details on mount or when walletId changes
+    // Fetch wallet details whenever walletId changes
     useEffect(() => {
         async function fetchWallet() {
             if (!walletId) return;
             setLoading(true);
+            setErrorMsg("");
             try {
                 const resp = await getWallet(walletId);
                 const { name, balance } = resp.data;
@@ -35,9 +36,10 @@ function Home() {
                 setWalletBalance(balance);
             } catch (err) {
                 console.error(err);
-                setErrorMsg(err.response?.data?.message || "Failed to load wallet");
-                // If 404 (wallet not found), remove it from localStorage
+                const msg = err.response?.data?.message || "Failed to load wallet";
+                setErrorMsg(msg);
                 if (err.response?.status === 404) {
+                    // If wallet not found, clear it and show init form
                     localStorage.removeItem("walletId");
                     setWalletId("");
                 }
@@ -48,15 +50,34 @@ function Home() {
         fetchWallet();
     }, [walletId]);
 
-    // Handler: Initialize wallet
+    // Validation for Initialize Wallet form
+    const validateInitForm = () => {
+        const errors = {};
+        if (!initName.trim()) {
+            errors.name = "Name is required";
+        }
+        if (initBalance !== "") {
+            const balanceVal = Number(initBalance);
+            if (isNaN(balanceVal) || balanceVal < 0) {
+                errors.balance = "Balance must be a non-negative number";
+            } else if (!/^\d+(\.\d{1,4})?$/.test(initBalance.toString())) {
+                errors.balance = "Balance can have at most 4 decimal places";
+            }
+        }
+        return errors;
+    };
+
     const handleInitSubmit = async (e) => {
         e.preventDefault();
         setErrorMsg("");
+        setFieldErrors({});
 
-        if (!initName.trim()) {
-            setErrorMsg("Name is required");
+        const errors = validateInitForm();
+        if (Object.keys(errors).length > 0) {
+            setFieldErrors(errors);
             return;
         }
+
         const payload = {
             name: initName.trim(),
             balance: initBalance !== "" ? parseFloat(initBalance) : 0,
@@ -66,7 +87,6 @@ function Home() {
         try {
             const resp = await setupWallet(payload);
             const { id, balance, name } = resp.data;
-            // Save to localStorage
             localStorage.setItem("walletId", id);
             setWalletId(id);
             setWalletBalance(balance);
@@ -76,27 +96,48 @@ function Home() {
             setInitBalance("");
         } catch (err) {
             console.error(err);
-            setErrorMsg(err.response?.data?.message || "Failed to initialize wallet");
+            const msg = err.response?.data?.message || "Failed to initialize wallet";
+            setErrorMsg(msg);
         } finally {
             setLoading(false);
         }
     };
 
-    // Handler: Create transaction
+    // Validation for Transaction form
+    const validateTxnForm = () => {
+        const errors = {};
+        if (!txnAmount) {
+            errors.amount = "Amount is required";
+        } else {
+            const amtVal = Number(txnAmount);
+            if (isNaN(amtVal) || amtVal === 0) {
+                errors.amount = "Amount must be a non-zero number";
+            } else if (!/^-?\d+(\.\d{1,4})?$/.test(txnAmount.toString())) {
+                errors.amount = "Amount can have at most 4 decimal places";
+            }
+        }
+        if (txnDesc && txnDesc.length > 100) {
+            errors.description = "Description cannot exceed 100 characters";
+        }
+        return errors;
+    };
+
     const handleTxnSubmit = async (e) => {
         e.preventDefault();
         setErrorMsg("");
+        setFieldErrors({});
 
-        if (!txnAmount || isNaN(parseFloat(txnAmount)) || parseFloat(txnAmount) === 0) {
-            setErrorMsg("Amount must be a non-zero number");
+        const errors = validateTxnForm();
+        if (Object.keys(errors).length > 0) {
+            setFieldErrors(errors);
             return;
         }
+
         const amtValue = parseFloat(txnAmount);
-        // For DEBIT, send a negative number
         const signedAmount = txnType === "DEBIT" ? -Math.abs(amtValue) : Math.abs(amtValue);
         const payload = {
             amount: signedAmount,
-            description: txnDesc,
+            description: txnDesc.trim(),
         };
 
         setLoading(true);
@@ -110,13 +151,13 @@ function Home() {
             setTxnType("CREDIT");
         } catch (err) {
             console.error(err);
-            setErrorMsg(err.response?.data?.message || "Failed to perform transaction");
+            const msg = err.response?.data?.message || "Failed to perform transaction";
+            setErrorMsg(msg);
         } finally {
             setLoading(false);
         }
     };
 
-    // Render
     return (
         <div
             style={{
@@ -129,12 +170,13 @@ function Home() {
         >
             <h1 style={{ textAlign: "center" }}>Wallet Dashboard</h1>
 
+            {/* Display any top-level error message */}
             {errorMsg && <div style={{ color: "red", marginBottom: "1rem" }}>{errorMsg}</div>}
 
             {loading && <div style={{ marginBottom: "1rem" }}>Loading…</div>}
 
             {!walletId ? (
-                // Initialize Wallet Form
+                // --- Initialize Wallet Form ---
                 <form onSubmit={handleInitSubmit}>
                     <div style={{ marginBottom: "0.75rem" }}>
                         <label>
@@ -145,23 +187,33 @@ function Home() {
                                 onChange={(e) => setInitName(e.target.value)}
                                 style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
                                 placeholder="Enter your name"
-                                required
                             />
                         </label>
+                        {fieldErrors.name && (
+                            <div style={{ color: "red", marginTop: "0.25rem" }}>
+                                {fieldErrors.name}
+                            </div>
+                        )}
                     </div>
+
                     <div style={{ marginBottom: "0.75rem" }}>
                         <label>
                             <strong>Initial Balance (optional):</strong>
                             <input
-                                type="number"
-                                step="0.0001"
+                                type="text"
                                 value={initBalance}
                                 onChange={(e) => setInitBalance(e.target.value)}
                                 style={{ width: "100%", padding: "0.5rem", marginTop: "0.25rem" }}
                                 placeholder="e.g. 10.0000 (defaults to 0)"
                             />
                         </label>
+                        {fieldErrors.balance && (
+                            <div style={{ color: "red", marginTop: "0.25rem" }}>
+                                {fieldErrors.balance}
+                            </div>
+                        )}
                     </div>
+
                     <button
                         type="submit"
                         style={{
@@ -179,7 +231,7 @@ function Home() {
                     </button>
                 </form>
             ) : (
-                // Wallet Exists: Show Balance & Transaction Form
+                // --- Wallet Exists: Show Balance & Transaction Form ---
                 <div>
                     <div
                         style={{
@@ -204,8 +256,7 @@ function Home() {
                             <label>
                                 <strong>Amount:</strong>
                                 <input
-                                    type="number"
-                                    step="0.0001"
+                                    type="text"
                                     value={txnAmount}
                                     onChange={(e) => setTxnAmount(e.target.value)}
                                     style={{
@@ -214,9 +265,13 @@ function Home() {
                                         marginTop: "0.25rem",
                                     }}
                                     placeholder="e.g. 5.0000"
-                                    required
                                 />
                             </label>
+                            {fieldErrors.amount && (
+                                <div style={{ color: "red", marginTop: "0.25rem" }}>
+                                    {fieldErrors.amount}
+                                </div>
+                            )}
                         </div>
 
                         <div style={{ marginBottom: "0.75rem" }}>
@@ -249,9 +304,14 @@ function Home() {
                                         padding: "0.5rem",
                                         marginTop: "0.25rem",
                                     }}
-                                    placeholder="e.g. 'Recharge', 'Purchase', etc."
+                                    placeholder="Max 100 characters"
                                 />
                             </label>
+                            {fieldErrors.description && (
+                                <div style={{ color: "red", marginTop: "0.25rem" }}>
+                                    {fieldErrors.description}
+                                </div>
+                            )}
                         </div>
 
                         <button
@@ -271,6 +331,7 @@ function Home() {
                         </button>
                     </form>
 
+                    {/* Link to Transactions Page */}
                     <button
                         onClick={() => navigate("/transactions")}
                         style={{
